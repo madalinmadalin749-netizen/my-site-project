@@ -3,17 +3,17 @@
 namespace App\Http\Controllers;
 
 use App\Models\Attempt;
-use App\Models\Answer;
+use App\Models\AttemptAnswer;
 use App\Models\Category;
 use App\Models\Question;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class TestController extends Controller
 {
     public function index(Request $request)
     {
         $categories = Category::query()->orderBy('name')->get();
-
         return view('tests.index', compact('categories'));
     }
 
@@ -24,9 +24,8 @@ class TestController extends Controller
         ]);
 
         $user = $request->user();
-        $categoryId = (int) $request->input('category_id');
 
-        // Dacă ai deja un attempt activ (nefinalizat), îl reluăm
+        // dacă există attempt activ, îl reluăm
         $activeAttempt = Attempt::query()
             ->where('user_id', $user->id)
             ->whereNull('finished_at')
@@ -37,35 +36,40 @@ class TestController extends Controller
             return redirect()->route('tests.show', $activeAttempt);
         }
 
-        // Selectăm întrebări din categorie (poți schimba limita)
-        $questions = Question::query()
+        $categoryId = (int) $request->input('category_id');
+
+        $questionIds = Question::query()
             ->where('category_id', $categoryId)
             ->inRandomOrder()
             ->limit(20)
-            ->get(['id']);
+            ->pluck('id');
 
-        if ($questions->isEmpty()) {
+        if ($questionIds->isEmpty()) {
             return back()->with('error', 'Categoria nu are încă întrebări.');
         }
 
-        $attempt = Attempt::create([
-            'user_id' => $user->id,
-            'category_id' => $categoryId,
-            'started_at' => now(),
-            'total_questions' => $questions->count(),
-            'correct_count' => 0,
-            'finished_at' => null,
-        ]);
+        $attempt = null;
 
-        // Pre-creăm answer rows (ca să avem ordine stabilă)
-        foreach ($questions as $q) {
-            Answer::create([
-                'attempt_id' => $attempt->id,
-                'question_id' => $q->id,
-                'choice' => null,
-                'is_correct' => false,
+        DB::transaction(function () use ($user, $categoryId, $questionIds, &$attempt) {
+            $attempt = Attempt::create([
+                'user_id' => $user->id,
+                'category_id' => $categoryId,
+                'started_at' => now(),
+                'finished_at' => null,
+                'total_questions' => $questionIds->count(),
+                'correct_count' => 0,
             ]);
-        }
+
+            foreach ($questionIds as $qid) {
+                AttemptAnswer::create([
+                    'attempt_id' => $attempt->id,
+                    'question_id' => $qid,
+                    'ai_question_id' => null,
+                    'selected' => null,
+                    'is_correct' => false,
+                ]);
+            }
+        });
 
         return redirect()->route('tests.show', $attempt);
     }
@@ -78,35 +82,46 @@ class TestController extends Controller
             return redirect()->route('tests.result', $attempt);
         }
 
-        // Ia prima întrebare ne-răspunsă
         $answers = $attempt->answers()
-            ->with('question')
+            ->with(['question', 'aiQuestion'])
             ->orderBy('id')
             ->get();
 
         $totalQuestions = $answers->count();
-        $answeredCount = $answers->whereNotNull('choice')->count();
+        $answeredCount = $answers->whereNotNull('selected')->count();
 
-        $current = $answers->firstWhere('choice', null);
+        // prima întrebare ne-răspunsă
+        $current = $answers->firstWhere('selected', null);
+
+        // dacă nu mai există, finalizează și mergi la rezultat (GET ok)
         if (!$current) {
-            // nimic ne-răspuns -> submit automat
-            return redirect()->route('tests.submit', $attempt);
+            $attempt->update(['finished_at' => now()]);
+            return redirect()->route('tests.result', $attempt);
         }
 
-        $question = $current->question;
+        $question = $current->question ?? $current->aiQuestion;
+        if (!$question) abort(404);
 
         $currentIndex = $answeredCount + 1;
-        $isLast = ($currentIndex >= $totalQuestions);
+        $isLast = ($currentIndex >= max(1, $totalQuestions));
+
+        // feedback overlay din sesiune (trimis de answer())
+        $feedback = session('test_feedback');
 
         return view('tests.take', compact(
             'attempt',
             'question',
             'currentIndex',
             'totalQuestions',
-            'isLast'
+            'isLast',
+            'feedback'
         ));
     }
 
+    /**
+     * PREMIUM: feedback overlay pe aceeași pagină.
+     * Salvăm feedback în session și redirect la tests.show (care arată următoarea întrebare).
+     */
     public function answer(Attempt $attempt, Request $request)
     {
         $this->authorizeAttempt($attempt, $request);
@@ -116,57 +131,80 @@ class TestController extends Controller
         }
 
         $data = $request->validate([
-            'choice' => ['required', 'in:A,B,C'],
-            'question_id' => ['required', 'exists:questions,id'],
+            'selected' => ['required', 'in:a,b,c,d'],
+            'question_id' => ['required', 'integer'],
         ]);
 
-        $question = Question::findOrFail($data['question_id']);
+        $selected = strtolower($data['selected']);
+        $qid = (int) $data['question_id'];
 
-        // Găsim answer row corespunzător
-        $answer = Answer::query()
-            ->where('attempt_id', $attempt->id)
-            ->where('question_id', $question->id)
-            ->firstOrFail();
+        $answer = $attempt->answers()
+            ->where(function ($q) use ($qid) {
+                $q->where('question_id', $qid)
+                  ->orWhere('ai_question_id', $qid);
+            })
+            ->with(['question', 'aiQuestion'])
+            ->first();
 
-        // dacă era deja răspuns -> nu îl schimbăm (poți schimba dacă vrei edit)
-        if ($answer->choice !== null) {
+        if (!$answer) abort(404);
+
+        // nu permitem schimbare după ce a răspuns
+        if (!is_null($answer->selected)) {
             return redirect()->route('tests.show', $attempt);
         }
 
-        $isCorrect = strtoupper($data['choice']) === strtoupper($question->correct);
+        $q = $answer->question ?? $answer->aiQuestion;
+        if (!$q) abort(404);
 
-        $answer->update([
-            'choice' => $data['choice'],
-            'is_correct' => $isCorrect,
-        ]);
+        $correctOpt = strtolower((string) ($q->correct ?? ''));
+        $isCorrect = ($selected === $correctOpt);
 
-        if ($isCorrect) {
-            $attempt->increment('correct_count');
+        DB::transaction(function () use ($attempt, $answer, $selected, $isCorrect) {
+            $answer->update([
+                'selected' => $selected,
+                'is_correct' => $isCorrect,
+            ]);
+
+            if ($isCorrect) {
+                $attempt->increment('correct_count');
+            }
+        });
+
+        // feedback pentru overlay (arată întrebarea anterioară, highlight corect/greșit)
+        $feedback = [
+            'prompt' => $q->prompt ?? '',
+            'a' => $q->a ?? null,
+            'b' => $q->b ?? null,
+            'c' => $q->c ?? null,
+            'd' => $q->d ?? null,
+            'selected' => $selected,
+            'correct' => $correctOpt,
+            'isCorrect' => $isCorrect,
+        ];
+
+        // dacă s-a terminat testul, finalizăm acum, ca să fie consistent
+        $remaining = $attempt->answers()->whereNull('selected')->count();
+        if ($remaining === 0 && is_null($attempt->finished_at)) {
+            $attempt->update(['finished_at' => now()]);
+            // trimitem feedback și mergem la rezultat după overlay
+            return redirect()
+                ->route('tests.result', $attempt)
+                ->with('test_feedback', $feedback)
+                ->with('show_overlay_on_result', true);
         }
 
-        return redirect()->route('tests.show', $attempt);
+        return redirect()
+            ->route('tests.show', $attempt)
+            ->with('test_feedback', $feedback);
     }
 
     public function submit(Attempt $attempt, Request $request)
     {
         $this->authorizeAttempt($attempt, $request);
 
-        if ($attempt->finished_at) {
-            return redirect()->route('tests.result', $attempt);
+        if (!$attempt->finished_at) {
+            $attempt->update(['finished_at' => now()]);
         }
-
-        // finalizează doar dacă toate au choice sau dacă vrei forced submit
-        $unanswered = $attempt->answers()->whereNull('choice')->count();
-
-        // dacă vrei să permiți submit chiar cu ne-răspunse, scoate if-ul ăsta
-        if ($unanswered > 0) {
-            return redirect()->route('tests.show', $attempt)
-                ->with('error', 'Mai ai întrebări nerăspunse.');
-        }
-
-        $attempt->update([
-            'finished_at' => now(),
-        ]);
 
         return redirect()->route('tests.result', $attempt);
     }
@@ -175,34 +213,52 @@ class TestController extends Controller
     {
         $this->authorizeAttempt($attempt, $request);
 
-        $answers = $attempt->answers()->with('question')->orderBy('id')->get();
+        $answers = $attempt->answers()
+            ->with(['question', 'aiQuestion'])
+            ->orderBy('id')
+            ->get();
 
-        $total = max(1, (int) $attempt->total_questions);
-        $correct = (int) $attempt->correct_count;
+        $total = max(1, (int) ($attempt->total_questions ?? $answers->count()));
+        $correct = (int) ($attempt->correct_count ?? 0);
         $percent = round(($correct / $total) * 100, 1);
 
-        return view('tests.result', compact('attempt', 'answers', 'total', 'correct', 'percent'));
-    }
+        $feedback = session('test_feedback');
+        $showOverlay = session('show_overlay_on_result', false);
 
-    public function history(Request $request)
-    {
-        $user = $request->user();
-
-        $attempts = Attempt::query()
-            ->where('user_id', $user->id)
-            ->latest('created_at')
-            ->with('category')
-            ->paginate(15);
-
-        return view('tests.history', compact('attempts'));
+        return view('tests.result', compact('attempt', 'answers', 'total', 'correct', 'percent', 'feedback', 'showOverlay'));
     }
 
     public function aiGenerate(Attempt $attempt, Request $request)
     {
-        // placeholder – îl facem “pe bune” după ce UI + core flow e perfect
         $this->authorizeAttempt($attempt, $request);
 
-        return back()->with('status', 'AI Generate (placeholder).');
+        // aici rămâne “mock” dacă nu ai încă logica AI reală
+        return back()->with('status', 'AI: întrebare generată (mock).');
+    }
+
+    public function history(Request $request)
+    {
+        $categories = Category::query()->orderBy('name')->get();
+
+        $status = $request->input('status', 'all');
+        $categoryId = $request->input('category_id');
+
+        $query = Attempt::query()
+            ->where('user_id', $request->user()->id)
+            ->with('category')
+            ->latest('created_at');
+
+        if ($categoryId) $query->where('category_id', $categoryId);
+
+        if ($status === 'finished') $query->whereNotNull('finished_at');
+        if ($status === 'active') $query->whereNull('finished_at');
+
+        if ($request->filled('from')) $query->whereDate('created_at', '>=', $request->input('from'));
+        if ($request->filled('to')) $query->whereDate('created_at', '<=', $request->input('to'));
+
+        $attempts = $query->paginate(15)->withQueryString();
+
+        return view('tests.history', compact('attempts', 'categories', 'status'));
     }
 
     private function authorizeAttempt(Attempt $attempt, Request $request): void
