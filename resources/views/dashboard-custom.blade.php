@@ -1,246 +1,131 @@
 <x-app-layout>
-<style>
-  .score-bar {
-    display: block !important;
-    height: 8px !important;
-    width: 100% !important;
-    background: #f3f4f6 !important;
-    border-radius: 9999px !important;
-    overflow: hidden !important;
-    margin-top: 8px !important;
-  }
-  .score-bar > span {
-    display: block !important;
-    height: 8px !important;
-    background: #f59e0b !important;
-    width: 0%;
-    border-radius: 9999px !important;
-  }
-</style>
+    <div class="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-slate-950 via-slate-950 to-slate-900">
+        {{-- background glow --}}
+        <div class="pointer-events-none absolute inset-0 overflow-hidden">
+            <div class="absolute -top-32 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-indigo-500/20 blur-3xl"></div>
+            <div class="absolute top-40 right-[-120px] h-[420px] w-[420px] rounded-full bg-cyan-400/10 blur-3xl"></div>
+            <div class="absolute bottom-[-160px] left-[-140px] h-[520px] w-[520px] rounded-full bg-fuchsia-500/10 blur-3xl"></div>
+        </div>
 
-    <x-slot name="header">
-        <div class="flex items-center justify-between gap-4">
-            <div class="text-xl font-semibold text-gray-800">Dashboard</div>
+        <div class="relative mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+            {{-- Header --}}
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                    <h1 class="text-2xl sm:text-3xl font-semibold tracking-tight text-white">
+                        Dashboard
+                    </h1>
+                    <p class="mt-1 text-sm text-slate-300">
+                        Progresul tău, statistici și acces rapid la teste.
+                    </p>
+                </div>
 
-            <div class="flex items-center gap-2">
-                @if($activeAttempt)
-                    <a href="{{ route('tests.show', $activeAttempt) }}"
-                       class="px-4 py-2 rounded-lg bg-orange-500 text-white text-sm font-medium hover:bg-orange-600">
-                        Continuă testul
+                <div class="flex gap-3">
+                    <a href="{{ route('tests.index') }}"
+                       class="inline-flex items-center justify-center rounded-xl bg-white/10 px-4 py-2 text-sm font-medium text-white ring-1 ring-white/10 backdrop-blur hover:bg-white/15 transition">
+                        Test nou
                     </a>
-                @endif
-
-                <a href="{{ route('tests.index') }}"
-                   class="px-4 py-2 rounded-lg bg-black text-white text-sm font-medium hover:bg-gray-900">
-                    Test nou
-                </a>
-
-                @if(\Illuminate\Support\Facades\Route::has('tests.history'))
-                    <a href="{{ route('tests.history') }}"
-                       class="px-4 py-2 rounded-lg bg-gray-100 text-gray-900 text-sm font-medium hover:bg-gray-200">
+                    <a href="{{ route('history.index') }}"
+                       class="inline-flex items-center justify-center rounded-xl bg-indigo-500/90 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500 transition shadow-lg shadow-indigo-500/20">
                         Istoric
                     </a>
-                @endif
-            </div>
-        </div>
-    </x-slot>
-
-    <div class="py-8">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
-
-            {{-- Stats row (ca în screenshot) --}}
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-                    <div class="text-sm text-gray-500">Teste totale</div>
-                    <div class="mt-2 text-2xl font-bold text-gray-900">{{ $totalAttempts ?? 0 }}</div>
-                </div>
-
-                <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-                    <div class="text-sm text-gray-500">Teste finalizate</div>
-                    <div class="mt-2 text-2xl font-bold text-gray-900">{{ $finishedAttempts ?? 0 }}</div>
-                </div>
-
-                <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-                    <div class="text-sm text-gray-500">Cel mai bun scor</div>
-                    <div class="mt-2 text-2xl font-bold text-gray-900">{{ (int) round($bestPercent ?? 0) }}%</div>
-                </div>
-
-                <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-                    <div class="text-sm text-gray-500">Media scorurilor</div>
-                    <div class="mt-2 text-2xl font-bold text-gray-900">{{ (int) round($avgPercent ?? 0) }}%</div>
-                </div>
-
-                <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-                    <div class="text-sm text-gray-500">Streak (≥ 70%)</div>
-                    <div class="mt-2 text-2xl font-bold text-gray-900">{{ $streak ?? 0 }}</div>
                 </div>
             </div>
 
-            {{-- Banner test în desfășurare (cu buton) --}}
-            @if($activeAttempt)
-                <div class="bg-amber-50 border border-amber-200 rounded-xl p-5 flex items-center justify-between">
-                    <div>
-                        <div class="font-semibold text-amber-900">Ai un test în desfășurare</div>
-                        <div class="text-sm text-amber-800">
-                            Categoria: {{ $activeAttempt->category->name ?? '—' }}
+            {{-- KPI cards --}}
+            <div class="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                @php
+                    $cards = [
+                        ['label' => 'Teste totale', 'value' => $totalAttempts ?? 0],
+                        ['label' => 'Finalizate', 'value' => $finishedAttempts ?? 0],
+                        ['label' => 'Best %', 'value' => number_format($bestPercent ?? 0, 1) . '%'],
+                        ['label' => 'Medie %', 'value' => number_format($avgPercent ?? 0, 1) . '%'],
+                    ];
+                @endphp
+
+                @foreach($cards as $c)
+                    <div class="rounded-2xl bg-white/5 ring-1 ring-white/10 backdrop-blur p-5 hover:bg-white/7 transition">
+                        <div class="text-xs uppercase tracking-wider text-slate-300">{{ $c['label'] }}</div>
+                        <div class="mt-2 text-2xl font-semibold text-white">{{ $c['value'] }}</div>
+                        <div class="mt-3 h-1.5 w-full rounded-full bg-white/10 overflow-hidden">
+                            <div class="h-full w-2/3 rounded-full bg-gradient-to-r from-indigo-400 to-cyan-300"></div>
                         </div>
                     </div>
+                @endforeach
+            </div>
 
-                    <a href="{{ route('tests.show', $activeAttempt) }}"
-                       class="px-5 py-2 rounded-lg bg-orange-500 text-white font-medium hover:bg-orange-600">
-                        Continuă
-                    </a>
-                </div>
-            @endif
+            {{-- Main grid --}}
+            <div class="mt-8 grid gap-6 lg:grid-cols-3">
+                {{-- Left: Quick actions / categories --}}
+                <div class="lg:col-span-2 rounded-2xl bg-white/5 ring-1 ring-white/10 backdrop-blur p-6">
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-base font-semibold text-white">Începe rapid</h2>
+                        <span class="text-xs text-slate-300">Alege o categorie</span>
+                    </div>
 
-            {{-- LAYOUTUL CORECT: stânga (2 carduri stacked), dreapta (1 card) --}}
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                {{-- STÂNGA: ocupă 2 coloane pe desktop --}}
-                <div class="lg:col-span-2 space-y-6">
-
-                    {{-- Evoluție scor (cu bara de progres pe fiecare rând) --}}
-                    <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="text-lg font-semibold text-gray-900">Evoluție scor</div>
-                            <div class="text-sm text-gray-500">Ultimele 10</div>
-                        </div>
-
-                        @forelse($recentFinished as $a)
-                            @php
-                                $total = max(1, (int) $a->total_questions);
-                                $pct = (int) round(($a->correct_count * 100) / $total);
-                            @endphp
-
-                            <div class="py-3 border-t border-gray-100 first:border-t-0">
-                                <div class="flex items-center justify-between text-sm">
-                                    <div class="font-medium text-gray-900">
-                                        {{ $a->category->name ?? 'Categorie' }}
-                                        <span class="text-gray-400 font-normal">• {{ \Illuminate\Support\Carbon::parse($a->finished_at)->format('d.m.Y H:i') }}</span>
+                    <div class="mt-5 grid gap-4 sm:grid-cols-2">
+                        @forelse(($categories ?? []) as $cat)
+                            <a href="{{ route('tests.start', $cat) }}"
+                               class="group rounded-2xl bg-white/5 ring-1 ring-white/10 p-5 hover:bg-white/10 transition">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div>
+                                        <div class="text-sm font-semibold text-white group-hover:text-white">
+                                            {{ $cat->name }}
+                                        </div>
+                                        <div class="mt-1 text-xs text-slate-300">
+                                            Începe un test din această categorie
+                                        </div>
                                     </div>
-                                    <div class="font-semibold text-orange-600">{{ $pct }}%</div>
+                                    <div class="mt-0.5 shrink-0 rounded-xl bg-indigo-500/15 ring-1 ring-indigo-400/30 px-2 py-1 text-xs text-indigo-200">
+                                        Start
+                                    </div>
                                 </div>
-
-                                {{-- BARA de progres (asta ziceai că nu o mai ai) --}}
-                                <div class="score-bar">
-    <span style="width: {{ (int)$pct }}%"></span>
-</div>
-
-
-                                <div class="mt-2 text-xs text-gray-500">
-                                    {{ $a->correct_count }}/{{ $a->total_questions }}
-                                    <a class="float-right text-gray-500 hover:text-gray-900"
-                                       href="{{ route('tests.result', $a) }}">vezi →</a>
-                                </div>
-                            </div>
+                            </a>
                         @empty
-                            <div class="text-sm text-gray-500">Nu ai teste finalizate încă.</div>
+                            <div class="rounded-2xl bg-white/5 ring-1 ring-white/10 p-6 text-sm text-slate-300">
+                                Nu există categorii încă. Importă întrebări în Admin.
+                            </div>
                         @endforelse
                     </div>
-
-                    {{-- Ultimele teste (sub Evoluție, tot în stânga) --}}
-                    <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="text-lg font-semibold text-gray-900">Ultimele teste</div>
-
-                            @if(\Illuminate\Support\Facades\Route::has('tests.history'))
-                                <a class="text-sm text-gray-500 hover:text-gray-900" href="{{ route('tests.history') }}">
-                                    toate →
-                                </a>
-                            @endif
-                        </div>
-
-                        <div class="space-y-3">
-                            @forelse($recentAttempts as $a)
-                                @php
-                                    $pct = null;
-                                    if ($a->finished_at && (int)$a->total_questions > 0) {
-                                        $pct = (int) round(($a->correct_count * 100) / (int)$a->total_questions);
-                                    }
-                                @endphp
-
-                                <div class="rounded-xl border border-gray-100 p-4 flex items-center justify-between">
-                                    <div>
-                                        <div class="font-semibold text-gray-900">{{ $a->category->name ?? 'Categorie' }}</div>
-                                        <div class="text-xs text-gray-500">{{ \Illuminate\Support\Carbon::parse($a->created_at)->format('d.m.Y H:i') }}</div>
-                                        <div class="mt-1 text-sm text-gray-700">
-                                            @if($pct === null)
-                                                {{ $a->finished_at ? '—' : 'În lucru' }}
-                                            @else
-                                                {{ $a->correct_count }}/{{ $a->total_questions }} • {{ $pct }}%
-                                            @endif
-                                        </div>
-                                    </div>
-
-                                    <a href="{{ $a->finished_at ? route('tests.result', $a) : route('tests.show', $a) }}"
-                                       class="px-4 py-2 rounded-lg bg-black text-white text-sm font-medium hover:bg-gray-900">
-                                        {{ $a->finished_at ? 'Vezi rezultat' : 'Continuă' }}
-                                    </a>
-                                </div>
-                            @empty
-                                <div class="text-sm text-gray-500">Nu ai încercări încă.</div>
-                            @endforelse
-                        </div>
-                    </div>
-
                 </div>
 
-                {{-- DREAPTA: Progres pe categorii --}}
-                <div class="lg:col-span-1">
-                    <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-6">
-                        <div class="flex items-center justify-between mb-4">
-                            <div class="text-lg font-semibold text-gray-900">Progres pe categorii</div>
-                            <div class="text-sm text-gray-500">Ultimul scor</div>
-                        </div>
+                {{-- Right: Recent attempts --}}
+                <div class="rounded-2xl bg-white/5 ring-1 ring-white/10 backdrop-blur p-6">
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-base font-semibold text-white">Ultimele teste</h2>
+                        <a href="{{ route('history.index') }}" class="text-xs text-slate-300 hover:text-white transition">
+                            Vezi tot
+                        </a>
+                    </div>
 
-                        <div class="space-y-4">
-                            @foreach($categoryProgress as $row)
-                                @php
-                                    $c = $row->category;
-                                    $pct = $row->last_percent;   // null sau 0..100
-                                    $last = $row->last_attempt;
-                                @endphp
-
-                                <div class="rounded-xl border border-gray-100 p-4">
-                                    <div class="flex items-start justify-between">
-                                        <div>
-                                            <div class="font-semibold text-gray-900">{{ $c->name }}</div>
-                                            <div class="text-sm text-gray-500">{{ $c->questions_count }} întrebări</div>
-                                        </div>
-                                        <div class="font-semibold text-gray-700">
-                                            {{ is_null($pct) ? '—' : ($pct.'%') }}
-                                        </div>
+                    <div class="mt-5 space-y-3">
+                        @forelse(($recentAttempts ?? []) as $a)
+                            <a href="{{ route('history.show', $a) }}"
+                               class="block rounded-2xl bg-white/5 ring-1 ring-white/10 p-4 hover:bg-white/10 transition">
+                                <div class="flex items-center justify-between">
+                                    <div class="text-sm font-medium text-white">
+                                        {{ optional($a->category)->name ?? 'Test' }}
                                     </div>
-
-                                    <div style="margin-top:8px;height:8px;background:#f3f4f6;border-radius:9999px;overflow:hidden;">
-    <div style="height:8px;background:#f59e0b;width: {{ (int)$pct }}%;border-radius:9999px;"></div>
-</div>
-
-                                    <div class="mt-3 flex items-center gap-2">
-                                        <form method="POST" action="{{ route('tests.start') }}">
-                                            @csrf
-                                            <input type="hidden" name="category_id" value="{{ $c->id }}">
-                                            <input type="hidden" name="count" value="20">
-                                            <button type="submit"
-                                                    class="px-4 py-2 rounded-lg bg-black text-white text-sm font-medium hover:bg-gray-900">
-                                                Start (20)
-                                            </button>
-                                        </form>
-
-                                        @if($last)
-                                            <a href="{{ route('tests.result', $last) }}"
-                                               class="px-4 py-2 rounded-lg bg-gray-100 text-gray-900 text-sm font-medium hover:bg-gray-200">
-                                                Ultimul rezultat
-                                            </a>
-                                        @endif
+                                    <div class="text-xs text-slate-300">
+                                        {{ $a->finished_at ? 'Finalizat' : 'În desfășurare' }}
                                     </div>
                                 </div>
-                            @endforeach
-                        </div>
-
+                                <div class="mt-2 text-xs text-slate-300">
+                                    Întrebări: {{ $a->total_questions ?? 0 }} · Corecte: {{ $a->correct_count ?? 0 }}
+                                </div>
+                            </a>
+                        @empty
+                            <div class="rounded-2xl bg-white/5 ring-1 ring-white/10 p-4 text-sm text-slate-300">
+                                N-ai încă teste. Apasă „Test nou”.
+                            </div>
+                        @endforelse
                     </div>
                 </div>
             </div>
 
+            {{-- Footer hint --}}
+            <div class="mt-10 text-xs text-slate-400">
+                Tip: fă 3 teste pe zi ca să vezi progres clar în medie și best score.
+            </div>
         </div>
     </div>
 </x-app-layout>

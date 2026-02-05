@@ -56,7 +56,7 @@ class DashboardController extends Controller
         }
 
         // progres pe categorii: ultimul attempt valid per categorie
-        $categories = Category::withCount('questions')->get();
+        $categories = Category::query()->orderBy('name')->get();
 
         $lastByCategory = (clone $validFinished)
             ->latest('finished_at')
@@ -82,7 +82,7 @@ class DashboardController extends Controller
         $recentAttempts = (clone $base)
             ->with('category')
             ->latest('created_at')
-            ->limit(10)
+            ->limit(5)
             ->get();
 
         return view('dashboard-custom', compact(
@@ -92,6 +92,7 @@ class DashboardController extends Controller
             'avgPercent',
             'streak',
             'activeAttempt',
+            'categories'.
             'recentFinished',
             'categoryProgress',
             'recentAttempts',
