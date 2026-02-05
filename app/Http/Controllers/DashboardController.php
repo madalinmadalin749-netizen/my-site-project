@@ -85,14 +85,14 @@ class DashboardController extends Controller
             ->limit(5)
             ->get();
 
-        return view('dashboard-custom', compact(
+        return view('dashboard', compact(
             'totalAttempts',
             'finishedAttempts',
             'bestPercent',
             'avgPercent',
             'streak',
             'activeAttempt',
-            'categories'.
+            'categories',
             'recentFinished',
             'categoryProgress',
             'recentAttempts',
