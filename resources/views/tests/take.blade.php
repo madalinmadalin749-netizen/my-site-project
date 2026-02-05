@@ -1,186 +1,110 @@
 <x-app-layout>
-    <x-slot name="header">
-        @php
-            $total = $answers->count();
-            $answered = $answers->filter(fn($r) => !is_null($r->selected))->count();
-            $pct = $total > 0 ? (int) round($answered * 100 / $total) : 0;
-        @endphp
-
-        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div>
-                <h2 class="font-semibold text-xl text-gray-800 leading-tight">
-                    Test: {{ $attempt->category->name ?? 'Categorie' }}
-                </h2>
-                <div class="text-sm text-gray-500">
-                    Progres: <span class="font-semibold text-gray-800" id="answeredCountTop">{{ $answered }}</span>/<span class="font-semibold text-gray-800">{{ $total }}</span>
-                </div>
-            </div>
-
-            <div class="flex items-center gap-2">
-                <a href="{{ route('dashboard') }}"
-                   class="px-4 py-2 rounded-lg bg-gray-100 text-gray-900 text-sm font-medium hover:bg-gray-200">
-                    Dashboard
-                </a>
-
-                {{-- Submit (sus) --}}
-                <button type="submit"
-                        form="submitForm"
-                        onclick="return confirmSubmitLive({{ $total }});"
-                        class="px-4 py-2 rounded-lg bg-black text-white text-sm font-medium hover:bg-gray-900">
-                    Finalizează
-                </button>
-            </div>
+    <div class="min-h-[calc(100vh-4rem)] bg-gradient-to-b from-slate-950 via-slate-950 to-slate-900">
+        <div class="pointer-events-none absolute inset-0 overflow-hidden">
+            <div class="absolute -top-32 left-1/2 h-[520px] w-[520px] -translate-x-1/2 rounded-full bg-indigo-500/20 blur-3xl"></div>
+            <div class="absolute top-40 right-[-120px] h-[420px] w-[420px] rounded-full bg-cyan-400/10 blur-3xl"></div>
         </div>
-    </x-slot>
 
-    <div class="py-8">
-        <div class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 space-y-5">
-
-            @if (session('error'))
-                <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-                    {{ session('error') }}
+        <div class="relative mx-auto max-w-3xl px-4 py-10 sm:px-6 lg:px-8">
+            {{-- top bar --}}
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                    <div class="text-xs uppercase tracking-wider text-slate-400">
+                        {{ $attempt->category->name ?? 'Test' }}
+                    </div>
+                    <h1 class="mt-1 text-xl sm:text-2xl font-semibold tracking-tight text-white">
+                        Întrebarea {{ $currentIndex }} din {{ $totalQuestions }}
+                    </h1>
                 </div>
-            @endif
 
-            @if (session('success'))
-                <div class="rounded-xl border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-700">
-                    {{ session('success') }}
-                </div>
-            @endif
-
-            {{-- Summary/progress card --}}
-            <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-                <div class="flex items-center justify-between gap-4">
-                    <div class="text-sm text-gray-600">
-                        Răspunsuri completate:
-                        <span class="font-semibold text-gray-900" id="answeredCount">{{ $answered }}</span>
-                        / {{ $total }}
+                <div class="flex items-center gap-3">
+                    <div class="rounded-xl bg-white/5 ring-1 ring-white/10 px-3 py-2 text-xs text-slate-200">
+                        Progres: <span class="font-semibold text-white">{{ max(0, $currentIndex - 1) }}</span>/{{ $totalQuestions }}
                     </div>
 
-                    <div class="text-sm text-gray-600">
-                        Întrebări: <span class="font-semibold text-gray-900">{{ $total }}</span>
-                    </div>
-                </div>
-
-                {{-- bară progres (inline, ca să nu o mai pierzi) --}}
-                <div style="margin-top:10px;height:8px;background:#f3f4f6;border-radius:9999px;overflow:hidden;">
-                    <div id="progressBar"
-                         style="height:8px;background:#111827;width: {{ $pct }}%;border-radius:9999px;"></div>
+                    <a href="{{ route('dashboard') }}"
+                       class="inline-flex items-center justify-center rounded-xl bg-white/10 px-4 py-2 text-sm font-medium text-white ring-1 ring-white/10 backdrop-blur hover:bg-white/15 transition">
+                        Ieși
+                    </a>
                 </div>
             </div>
 
-            {{-- Formular principal --}}
-            <form id="submitForm" method="POST" action="{{ route('tests.submit', $attempt) }}">
-                @csrf
+            {{-- progress bar --}}
+            @php
+                $pct = (int) round(max(0, $currentIndex - 1) / max(1, $totalQuestions) * 100);
+            @endphp
+            <div class="mt-6 h-2 w-full rounded-full bg-white/10 overflow-hidden">
+                <div class="h-full rounded-full bg-gradient-to-r from-indigo-400 to-cyan-300" style="width: {{ $pct }}%"></div>
+            </div>
 
-                <div class="space-y-4">
-                    @foreach($answers as $index => $row)
-                        @php
-                            // întrebarea poate fi clasică sau AI
-                            $q = $row->question ?? $row->aiQuestion;
-
-                            // cheie unică pentru submit
-                            $key = $row->question_id ? "q_{$row->question_id}" : "ai_{$row->ai_question_id}";
-                            $name = "answers[{$key}]";
-
-                            $selected = $row->selected ? strtolower((string)$row->selected) : null;
-
-                            $optMap = [
-                                'a' => $q?->a,
-                                'b' => $q?->b,
-                                'c' => $q?->c,
-                                'd' => $q?->d,
-                            ];
-                        @endphp
-
-                        <div class="bg-white rounded-xl border border-gray-100 shadow-sm p-5">
-                            <div class="flex items-start justify-between gap-4">
-                                <div class="font-semibold text-gray-900">
-                                    {{ $index + 1 }}. {{ $q?->prompt ?? 'Întrebare' }}
-                                </div>
-
-                                @if($selected)
-                                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-50 text-green-700 border border-green-100">
-                                        Răspuns ales
-                                    </span>
-                                @else
-                                    <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-50 text-gray-500 border border-gray-100">
-                                        Necompletat
-                                    </span>
-                                @endif
-                            </div>
-
-                            <div class="mt-4 space-y-2">
-                                @foreach($optMap as $opt => $label)
-                                    @continue(empty($label))
-
-                                    <label class="flex items-start gap-3 rounded-xl border border-gray-100 p-3 hover:border-gray-200 cursor-pointer">
-                                        <input type="radio"
-                                               name="{{ $name }}"
-                                               value="{{ $opt }}"
-                                               @checked($selected === $opt)
-                                               class="mt-1">
-                                        <div class="text-sm text-gray-900">
-                                            <span class="font-semibold uppercase">{{ $opt }}.</span>
-                                            {{ $label }}
-                                        </div>
-                                    </label>
-                                @endforeach
-                            </div>
-                        </div>
-                    @endforeach
+            {{-- question card --}}
+            <div class="mt-6 rounded-2xl bg-white/5 ring-1 ring-white/10 backdrop-blur p-6 sm:p-7">
+                <div class="text-sm text-slate-300">Întrebare</div>
+                <div class="mt-2 text-lg sm:text-xl font-semibold text-white leading-snug">
+                    {{ $question->prompt }}
                 </div>
 
-                {{-- Sticky footer --}}
-                <div class="sticky bottom-4 mt-6">
-                    <div class="bg-white/90 backdrop-blur rounded-2xl border border-gray-100 shadow-sm p-4 flex items-center justify-between">
-                        <div class="text-sm text-gray-600">
-                            Progres:
-                            <span class="font-semibold text-gray-900" id="answeredCountFooter">{{ $answered }}</span>
-                            / {{ $total }}
+                <form method="POST" action="{{ route('tests.answer', $attempt) }}" class="mt-6 space-y-3">
+                    @csrf
+                    <input type="hidden" name="question_id" value="{{ $question->id }}"/>
+
+                    @php
+                        $answers = [
+                            'A' => $question->a,
+                            'B' => $question->b,
+                            'C' => $question->c,
+                        ];
+                    @endphp
+
+                    @foreach($answers as $key => $text)
+                        @if($text)
+                            <label class="group block cursor-pointer rounded-2xl bg-white/5 ring-1 ring-white/10 px-4 py-4 hover:bg-white/10 transition">
+                                <div class="flex items-start gap-3">
+                                    <input
+                                        type="radio"
+                                        name="choice"
+                                        value="{{ $key }}"
+                                        class="mt-1 h-4 w-4 accent-indigo-400"
+                                        required
+                                    />
+                                    <div class="flex-1">
+                                        <div class="flex items-center gap-2">
+                                            <span class="inline-flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-500/15 ring-1 ring-indigo-400/30 text-xs font-semibold text-indigo-200">
+                                                {{ $key }}
+                                            </span>
+                                            <div class="text-sm font-semibold text-white">Varianta {{ $key }}</div>
+                                        </div>
+                                        <div class="mt-2 text-sm text-slate-300 leading-relaxed">
+                                            {{ $text }}
+                                        </div>
+                                    </div>
+                                </div>
+                            </label>
+                        @endif
+                    @endforeach
+
+                    <div class="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div class="text-xs text-slate-400">
+                            Alege varianta și mergi mai departe.
                         </div>
 
                         <button type="submit"
-                                onclick="return confirmSubmitLive({{ $total }});"
-                                class="px-5 py-2 rounded-xl bg-black text-white text-sm font-medium hover:bg-gray-900">
-                            Finalizează testul
+                                class="inline-flex items-center justify-center rounded-xl bg-indigo-500/90 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-500 transition shadow-lg shadow-indigo-500/20">
+                            {{ $isLast ? 'Finalizează ultima întrebare' : 'Următoarea' }}
                         </button>
                     </div>
-                </div>
-            </form>
+                </form>
+            </div>
 
+            @if($isLast)
+                <form method="POST" action="{{ route('tests.submit', $attempt) }}" class="mt-6">
+                    @csrf
+                    <button type="submit"
+                            class="w-full rounded-2xl bg-emerald-500/90 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-500 transition shadow-lg shadow-emerald-500/20">
+                        Finalizează testul
+                    </button>
+                </form>
+            @endif
         </div>
     </div>
-
-    <script>
-        function confirmSubmitLive(total) {
-            // contează câte întrebări au un radio bifat (un radio per întrebare)
-            const answered = document.querySelectorAll('#submitForm input[type="radio"]:checked').length;
-            if (answered >= total) return true;
-            return confirm(`Mai ai ${total - answered} întrebări necompletate. Sigur vrei să finalizezi?`);
-        }
-
-        function updateProgress() {
-            const total = {{ $total }};
-            const answered = document.querySelectorAll('#submitForm input[type="radio"]:checked').length;
-
-            const pct = total > 0 ? Math.round(answered * 100 / total) : 0;
-
-            const el1 = document.getElementById('answeredCount');
-            const el2 = document.getElementById('answeredCountTop');
-            const el3 = document.getElementById('answeredCountFooter');
-            const bar = document.getElementById('progressBar');
-
-            if (el1) el1.textContent = answered;
-            if (el2) el2.textContent = answered;
-            if (el3) el3.textContent = answered;
-            if (bar) bar.style.width = pct + '%';
-        }
-
-        document.addEventListener('change', (e) => {
-            if (e.target && e.target.matches('#submitForm input[type="radio"]')) {
-                updateProgress();
-            }
-        });
-    </script>
 </x-app-layout>
